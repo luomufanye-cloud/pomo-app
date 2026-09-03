@@ -1,0 +1,1051 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#12151a">
+<title>🍅 番茄钟</title>
+<style>
+  :root{
+    --bg:#12151a;
+    --panel:#1b2027;
+    --panel-2:#222933;
+    --line:#2c343f;
+    --text:#eef1f5;
+    --muted:#8a94a3;
+    --accent:#ff5a36;
+    --accent-soft:rgba(255,90,54,.14);
+    --green:#4ade80;
+    --blue:#6aa9ff;
+    --radius:16px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{
+    font-family:"Sarasa Gothic SC","Microsoft YaHei",system-ui,sans-serif;
+    background:
+      radial-gradient(900px 500px at 50% -10%,rgba(255,90,54,.10),transparent 60%),
+      var(--bg);
+    color:var(--text);
+    display:flex;justify-content:center;
+    min-height:100vh;
+    transition:background .4s;
+  }
+  body.immersive{
+    background:
+      radial-gradient(700px 600px at 50% 20%,rgba(255,90,54,.12),transparent 65%),
+      #0c0e12;
+    align-items:center;
+  }
+  .wrap{width:100%;max-width:520px;padding:20px 18px 40px}
+
+  /* ── 顶栏 ── */
+  header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+  .logo{font-weight:800;font-size:20px;letter-spacing:.5px}
+  .logo em{font-style:normal;color:var(--accent)}
+  .hd-btns{display:flex;gap:8px}
+  .icon-btn{
+    background:var(--panel);border:1px solid var(--line);color:var(--muted);
+    width:38px;height:38px;border-radius:12px;cursor:pointer;font-size:16px;
+    display:flex;align-items:center;justify-content:center;transition:.15s;
+  }
+  .icon-btn:hover{color:var(--text);border-color:#3d4756}
+  .icon-btn.imm-on{color:var(--accent);border-color:var(--accent)}
+
+  /* ── 模式切换 ── */
+  .modes{display:flex;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:4px;gap:4px;margin-bottom:22px}
+  .modes button{
+    flex:1;padding:10px 0;border:none;border-radius:10px;background:transparent;
+    color:var(--muted);font-size:14px;font-weight:600;cursor:pointer;transition:.15s;font-family:inherit;
+  }
+  .modes button.on{background:var(--accent);color:#fff;box-shadow:0 4px 14px rgba(255,90,54,.35)}
+  .modes button:not(.on):hover{color:var(--text)}
+
+  /* ── 计时主体 ── */
+  .timer-card{
+    background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:30px 20px 26px;display:flex;flex-direction:column;align-items:center;
+    transition:border-color .4s;
+  }
+  body.immersive .timer-card{background:rgba(27,32,39,.72);border-color:rgba(255,90,54,.22)}
+  .ring-box{position:relative;width:248px;height:248px;margin-bottom:20px}
+  body.immersive .ring-box{width:280px;height:280px}
+  .ring-box svg{transform:rotate(-90deg)}
+  .ring-bg{fill:none;stroke:var(--panel-2);stroke-width:10}
+  .ring-fg{fill:none;stroke:var(--accent);stroke-width:10;stroke-linecap:round;transition:stroke .3s}
+  .ring-center{
+    position:absolute;inset:0;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:4px;
+  }
+  #time{
+    font-family:"Antonio","Sarasa Gothic SC",sans-serif;
+    font-size:64px;font-weight:700;letter-spacing:2px;line-height:1;
+    font-variant-numeric:tabular-nums;
+  }
+  body.immersive #time{font-size:72px}
+  #time.finished{animation:pop .5s ease}
+  @keyframes pop{0%{transform:scale(1)}40%{transform:scale(1.08)}100%{transform:scale(1)}}
+  #phase-label{color:var(--muted);font-size:13px;letter-spacing:3px}
+  #cycle-dots{display:flex;gap:7px;margin-top:10px}
+  #cycle-dots i{width:8px;height:8px;border-radius:50%;background:var(--panel-2);transition:.2s}
+  #cycle-dots i.done{background:var(--accent)}
+
+  .controls{display:flex;gap:12px;align-items:center}
+  .btn-main{
+    background:var(--accent);color:#fff;border:none;border-radius:14px;
+    padding:14px 44px;font-size:17px;font-weight:700;cursor:pointer;font-family:inherit;
+    box-shadow:0 6px 20px rgba(255,90,54,.35);transition:.15s;letter-spacing:1px;
+  }
+  .btn-main:hover{transform:translateY(-1px);filter:brightness(1.08)}
+  .btn-main:active{transform:translateY(0)}
+  .btn-sub{
+    background:var(--panel-2);color:var(--muted);border:1px solid var(--line);
+    border-radius:14px;padding:14px 18px;font-size:16px;cursor:pointer;font-family:inherit;transition:.15s;
+  }
+  .btn-sub:hover{color:var(--text)}
+  .auto-hint{margin-top:14px;font-size:12px;color:var(--muted)}
+
+  /* ── 当前任务条 ── */
+  #current-task{
+    margin-top:16px;background:var(--accent-soft);border:1px solid rgba(255,90,54,.25);
+    border-radius:12px;padding:10px 16px;font-size:14px;display:none;width:100%;
+    color:var(--text);
+  }
+  #current-task.show{display:block}
+  #current-task .tag{color:var(--accent);font-weight:700;margin-right:8px}
+
+  /* ── 白噪音面板 ── */
+  .noise-sec{margin-top:22px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+  body.immersive .noise-sec{background:rgba(27,32,39,.72);border-color:rgba(106,169,255,.18)}
+  .noise-hd{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:14px 18px;cursor:pointer;user-select:none;
+  }
+  .noise-hd .t{font-size:15px;font-weight:700}
+  .noise-hd .t small{display:block;font-size:11px;color:var(--muted);font-weight:400;margin-top:2px}
+  .noise-hd .arrow{color:var(--muted);transition:transform .25s;font-size:12px}
+  .noise-sec.open .noise-hd .arrow{transform:rotate(180deg)}
+  .noise-body{display:none;padding:0 14px 14px}
+  .noise-sec.open .noise-body{display:block}
+  .master-row{
+    display:flex;align-items:center;gap:12px;background:var(--panel-2);
+    border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin-bottom:12px;
+  }
+  .master-row .lbl{font-size:13px;color:var(--muted);white-space:nowrap}
+  .master-row input[type=range]{flex:1}
+  .master-row .power{
+    background:var(--accent);border:none;color:#fff;border-radius:10px;
+    padding:8px 14px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;
+  }
+  .master-row .power.off{background:var(--panel);color:var(--muted);border:1px solid var(--line)}
+  .ch-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .ch{
+    background:var(--panel-2);border:1px solid var(--line);border-radius:12px;
+    padding:11px 12px;transition:.15s;cursor:pointer;
+  }
+  .ch.on{border-color:var(--accent);background:linear-gradient(135deg,var(--accent-soft),var(--panel-2) 60%)}
+  .ch .ch-hd{display:flex;align-items:center;justify-content:space-between}
+  .ch .ch-hd .nm{font-size:14px;font-weight:600}
+  .ch .ch-hd .nm .ico{margin-right:6px}
+  .ch .dot{width:8px;height:8px;border-radius:50%;background:#3d4756;transition:.2s}
+  .ch.on .dot{background:var(--accent);box-shadow:0 0 8px var(--accent)}
+  .ch input[type=range]{width:100%;margin-top:10px;opacity:.75}
+  .ch.on input[type=range]{opacity:1}
+
+  input[type=range]{
+    -webkit-appearance:none;appearance:none;height:4px;border-radius:2px;
+    background:#3d4756;outline:none;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;appearance:none;width:16px;height:16px;border-radius:50%;
+    background:var(--accent);cursor:pointer;border:none;
+  }
+
+  /* ── 任务清单 ── */
+  .section-title{font-size:15px;font-weight:700;margin:26px 0 12px;display:flex;align-items:center;gap:8px}
+  .section-title .n{color:var(--muted);font-weight:400;font-size:13px}
+  .task-input-row{display:flex;gap:8px;margin-bottom:12px}
+  .task-input-row input{
+    flex:1;background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:12px 14px;color:var(--text);font-size:14px;font-family:inherit;outline:none;transition:.15s;
+  }
+  .task-input-row input:focus{border-color:var(--accent)}
+  .task-input-row input::placeholder{color:#5a6472}
+  .task-input-row button{
+    background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    color:var(--text);padding:0 18px;cursor:pointer;font-size:14px;font-family:inherit;transition:.15s;
+  }
+  .task-input-row button:hover{border-color:var(--accent);color:var(--accent)}
+
+  #task-list{list-style:none;display:flex;flex-direction:column;gap:8px}
+  .task{
+    display:flex;align-items:center;gap:10px;background:var(--panel);
+    border:1px solid var(--line);border-radius:12px;padding:11px 14px;transition:.15s;
+  }
+  .task.active{border-color:var(--accent);background:linear-gradient(90deg,var(--accent-soft),var(--panel) 55%)}
+  .task.done .txt{text-decoration:line-through;color:var(--muted)}
+  .task .chk{
+    width:20px;height:20px;border-radius:6px;border:2px solid #3d4756;cursor:pointer;
+    flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;transition:.15s;
+  }
+  .task.done .chk{background:var(--green);border-color:var(--green)}
+  .task .txt{flex:1;font-size:14px;cursor:pointer;word-break:break-all}
+  .task .pomo-count{
+    font-size:12px;color:var(--accent);background:var(--accent-soft);
+    border-radius:8px;padding:2px 8px;white-space:nowrap;
+  }
+  .task .del{
+    background:none;border:none;color:#5a6472;cursor:pointer;font-size:15px;
+    padding:4px;border-radius:8px;transition:.15s;font-family:inherit;
+  }
+  .task .del:hover{color:#ff6b6b}
+  .empty-tip{color:#5a6472;font-size:13px;text-align:center;padding:14px 0}
+
+  /* ── 今日统计 ── */
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:26px}
+  .stat-card{
+    background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:16px 10px;text-align:center;
+  }
+  .stat-card b{font-size:26px;font-family:"Antonio","Sarasa Gothic SC",sans-serif;display:block;line-height:1.2}
+  .stat-card span{font-size:12px;color:var(--muted)}
+  .stat-card.focus b{color:var(--accent)}
+
+  /* ── 设置弹层 ── */
+  .mask{
+    position:fixed;inset:0;background:rgba(0,0,0,.55);backdrop-filter:blur(3px);
+    display:none;align-items:center;justify-content:center;z-index:50;padding:20px;
+  }
+  .mask.show{display:flex}
+  .dialog{
+    background:var(--panel);border:1px solid var(--line);border-radius:18px;
+    width:100%;max-width:380px;padding:24px;max-height:86vh;overflow-y:auto;
+  }
+  .dialog h3{font-size:17px;margin-bottom:18px;display:flex;justify-content:space-between;align-items:center}
+  .dialog h3 button{background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer;font-family:inherit}
+  .set-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+  .set-row label{font-size:14px}
+  .set-row .num{
+    display:flex;align-items:center;gap:0;background:var(--panel-2);
+    border:1px solid var(--line);border-radius:10px;overflow:hidden;
+  }
+  .set-row .num button{
+    background:none;border:none;color:var(--muted);width:34px;height:34px;
+    cursor:pointer;font-size:16px;font-family:inherit;
+  }
+  .set-row .num button:hover{color:var(--accent)}
+  .set-row .num b{width:46px;text-align:center;font-size:15px;font-family:"Antonio","Sarasa Gothic SC",sans-serif}
+  .switch-row{display:flex;align-items:center;justify-content:space-between;padding:6px 0}
+  .switch-row label{font-size:14px}
+  .switch{
+    position:relative;width:44px;height:24px;background:var(--panel-2);
+    border:1px solid var(--line);border-radius:12px;cursor:pointer;transition:.2s;flex-shrink:0;
+  }
+  .switch::after{
+    content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;
+    border-radius:50%;background:var(--muted);transition:.2s;
+  }
+  .switch.on{background:var(--accent);border-color:var(--accent)}
+  .switch.on::after{left:22px;background:#fff}
+  .dialog .save-btn{
+    width:100%;margin-top:8px;background:var(--accent);color:#fff;border:none;
+    border-radius:12px;padding:12px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;
+  }
+
+  /* ── 结束提示 ── */
+  #toast{
+    position:fixed;top:18px;left:50%;transform:translateX(-50%) translateY(-80px);
+    background:var(--accent);color:#fff;padding:11px 22px;border-radius:12px;
+    font-size:14px;font-weight:600;z-index:99;transition:transform .35s ease;
+    box-shadow:0 8px 24px rgba(255,90,54,.4);white-space:nowrap;
+  }
+  #toast.show{transform:translateX(-50%) translateY(0)}
+
+  /* ── 沉浸模式 ── */
+  body.immersive header,
+  body.immersive .modes,
+  body.immersive .section-title,
+  body.immersive .task-input-row,
+  body.immersive #task-list,
+  body.immersive .stats,
+  body.immersive footer,
+  body.immersive .auto-hint{display:none}
+  body.immersive .wrap{display:flex;flex-direction:column;justify-content:center;min-height:100vh;padding-bottom:24px}
+  .imm-exit{
+    position:fixed;top:16px;right:16px;z-index:60;
+    background:rgba(27,32,39,.8);border:1px solid var(--line);color:var(--muted);
+    border-radius:12px;padding:8px 14px;font-size:12px;cursor:pointer;font-family:inherit;
+    display:none;backdrop-filter:blur(4px);
+  }
+  body.immersive .imm-exit{display:block}
+  .imm-exit:hover{color:var(--text)}
+
+  footer{margin-top:30px;text-align:center;color:#5a6472;font-size:12px;line-height:1.8}
+
+  @media (max-width:420px){
+    #time{font-size:54px}
+    body.immersive #time{font-size:64px}
+    .ring-box{width:220px;height:220px}
+    body.immersive .ring-box{width:250px;height:250px}
+    .btn-main{padding:14px 34px}
+    .ch-grid{grid-template-columns:1fr 1fr}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">🍅 番茄<em>钟</em></div>
+    <div class="hd-btns">
+      <button class="icon-btn" id="btn-imm" title="沉浸模式">⛶</button>
+      <button class="icon-btn" id="btn-settings" title="设置">⚙</button>
+    </div>
+  </header>
+
+  <div class="modes" id="modes">
+    <button data-mode="focus" class="on">🍅 专注</button>
+    <button data-mode="short">☕ 短休息</button>
+    <button data-mode="long">🛋 长休息</button>
+  </div>
+
+  <div class="timer-card">
+    <div class="ring-box">
+      <svg width="100%" height="100%" viewBox="0 0 248 248">
+        <circle class="ring-bg" cx="124" cy="124" r="112"></circle>
+        <circle class="ring-fg" id="ring" cx="124" cy="124" r="112"
+                stroke-dasharray="703.7" stroke-dashoffset="0"></circle>
+      </svg>
+      <div class="ring-center">
+        <div id="time">25:00</div>
+        <div id="phase-label">FOCUS · 专注时间</div>
+        <div id="cycle-dots"><i></i><i></i><i></i><i></i></div>
+      </div>
+    </div>
+    <div class="controls">
+      <button class="btn-sub" id="btn-reset" title="重置">↺</button>
+      <button class="btn-main" id="btn-start">开始</button>
+      <button class="btn-sub" id="btn-skip" title="跳过本段">⏭</button>
+    </div>
+    <div class="auto-hint">空格键 = 开始 / 暂停</div>
+    <div id="current-task"></div>
+  </div>
+
+  <!-- 白噪音 -->
+  <div class="noise-sec open" id="noise-sec">
+    <div class="noise-hd" id="noise-hd">
+      <div class="t">🎧 沉浸白噪音<small>点卡片开关声音，可多种混音 · 拖滑条调音量</small></div>
+      <div class="arrow">▼</div>
+    </div>
+    <div class="noise-body">
+      <div class="master-row">
+        <span class="lbl">总音量</span>
+        <input type="range" id="noise-master" min="0" max="100" value="70">
+        <button class="power" id="noise-power">▶ 播放</button>
+      </div>
+      <div class="ch-grid" id="ch-grid"></div>
+    </div>
+  </div>
+
+  <div class="section-title">📝 任务清单 <span class="n">点击任务名设为当前专注任务</span></div>
+  <div class="task-input-row">
+    <input id="task-input" type="text" maxlength="60" placeholder="接下来要专注做什么？">
+    <button id="task-add">添加</button>
+  </div>
+  <ul id="task-list"></ul>
+
+  <div class="stats">
+    <div class="stat-card focus"><b id="st-focus">0</b><span>今日完成番茄</span></div>
+    <div class="stat-card"><b id="st-mins">0</b><span>今日专注分钟</span></div>
+    <div class="stat-card"><b id="st-streak">0</b><span>连续天数</span></div>
+  </div>
+
+  <footer>
+    番茄工作法：专注 25 分钟 → 短休 5 分钟，每 4 个番茄来一次长休<br>
+    数据保存在本机 · 白噪音为实时合成，无需联网
+  </footer>
+</div>
+
+<button class="imm-exit" id="imm-exit">✕ 退出沉浸</button>
+
+<!-- 设置弹层 -->
+<div class="mask" id="mask">
+  <div class="dialog">
+    <h3>⚙ 设置 <button id="dlg-close">×</button></h3>
+    <div class="set-row">
+      <label>🍅 专注时长（分钟）</label>
+      <div class="num">
+        <button data-t="focus" data-d="-5">−</button><b id="v-focus">25</b><button data-t="focus" data-d="5">+</button>
+      </div>
+    </div>
+    <div class="set-row">
+      <label>☕ 短休息（分钟）</label>
+      <div class="num">
+        <button data-t="short" data-d="-1">−</button><b id="v-short">5</b><button data-t="short" data-d="1">+</button>
+      </div>
+    </div>
+    <div class="set-row">
+      <label>🛋 长休息（分钟）</label>
+      <div class="num">
+        <button data-t="long" data-d="-5">−</button><b id="v-long">15</b><button data-t="long" data-d="5">+</button>
+      </div>
+    </div>
+    <div class="set-row">
+      <label>长休前番茄数</label>
+      <div class="num">
+        <button data-t="rounds" data-d="-1">−</button><b id="v-rounds">4</b><button data-t="rounds" data-d="1">+</button>
+      </div>
+    </div>
+    <div class="switch-row">
+      <label>自动开始下一段</label>
+      <div class="switch" id="sw-auto"></div>
+    </div>
+    <div class="switch-row">
+      <label>结束时声音提醒</label>
+      <div class="switch on" id="sw-sound"></div>
+    </div>
+    <button class="save-btn" id="dlg-save">保存</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+  var $ = function(s){ return document.querySelector(s); };
+  var RING_LEN = 2 * Math.PI * 112;
+
+  /* ═════════ 通用工具 ═════════ */
+  function load(k, def){
+    try{
+      var v = JSON.parse(localStorage.getItem(k));
+      return v ? Object.assign({}, def, v) : def;
+    }catch(e){ return def; }
+  }
+  function save(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+  function todayKey(){ var d=new Date(); return d.getFullYear()+"-"+(d.getMonth()+1)+"-"+d.getDate(); }
+
+  /* ═════════ 配置 & 状态 ═════════ */
+  var MODES = {
+    focus:{label:"FOCUS · 专注时间", color:"#ff5a36"},
+    short:{label:"BREAK · 短休息",   color:"#4ade80"},
+    long:{label:"LONG BREAK · 长休息", color:"#6aa9ff"}
+  };
+  var cfg = load("wb_pomo_cfg", {focus:25, short:5, long:15, rounds:4, autoNext:true, sound:true});
+  var state = {
+    mode:"focus",
+    remaining:cfg.focus*60,
+    total:cfg.focus*60,
+    running:false,
+    doneFocus:0,
+    timer:null,
+    endTime:0
+  };
+
+  /* ═════════ 白噪音引擎（纯 Web Audio 合成） ═════════ */
+  var Noise = {
+    ctx:null, master:null, channels:{}, powered:false, masterVol:0.7,
+    defs:[
+      {id:"rain",  ico:"🌧", name:"雨声",
+        build:function(c){ return chain(c, buf(c,"white"), [
+          filt("highpass",500), filt("lowpass",1500)
+        ]); }, events:"rain"},
+      {id:"wind",  ico:"🌲", name:"林间风",
+        build:function(c){ return chain(c, buf(c,"pink"), [
+          filt("bandpass",650,0.8)
+        ], {lfo:{target:"filter", freq:0.06, depth:260}}); }},
+      {id:"fire",  ico:"🔥", name:"篝火",
+        build:function(c){ return chain(c, buf(c,"brown"), [
+          filt("lowpass",700)
+        ]); }, events:"fire"},
+      {id:"waves", ico:"🌊", name:"海浪",
+        build:function(c){ return chain(c, buf(c,"brown"), [
+          filt("lowpass",450)
+        ], {lfo:{target:"gain", freq:0.09, depth:0.35}}); }},
+      {id:"pink",  ico:"📻", name:"粉噪音",
+        build:function(c){ return chain(c, buf(c,"pink"), [ filt("lowpass",9000) ]); }},
+      {id:"brown", ico:"🏔", name:"棕噪音",
+        build:function(c){ return chain(c, buf(c,"brown"), [ filt("lowpass",1100) ]); }},
+      {id:"white", ico:"⬜", name:"白噪音",
+        build:function(c){ return chain(c, buf(c,"white"), [ filt("lowpass",10000) ]); }}
+    ],
+
+    ensure:function(){
+      if(this.ctx) return true;
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if(!AC) return false;
+      this.ctx = new AC();
+      this.master = this.ctx.createGain();
+      this.master.gain.value = this.powered ? this.masterVol : 0;
+      this.master.connect(this.ctx.destination);
+      var prefs = this.loadPrefs();
+      var self = this;
+      this.defs.forEach(function(def){
+        var node = def.build(self.ctx);          // {src, filter, gain, lfoNodes}
+        node.gain.gain.value = prefs.active.indexOf(def.id)>=0 ? (prefs.vols[def.id]||0.6) : 0;
+        node.gain.connect(self.master);
+        var ch = {def:def, node:node, on:prefs.active.indexOf(def.id)>=0,
+                  vol:prefs.vols[def.id]!=null?prefs.vols[def.id]:0.6, evTimer:null};
+        if(ch.on && def.events) self.startEvents(ch);
+        self.channels[def.id] = ch;
+      });
+      return true;
+    },
+    loadPrefs:function(){
+      var p = load("wb_pomo_noise", {active:[], vols:{}, master:0.7});
+      this.masterVol = (p.master!=null)?p.master:0.7;
+      return p;
+    },
+    savePrefs:function(){
+      var active=[], vols={};
+      for(var id in this.channels){
+        if(this.channels[id].on) active.push(id);
+        vols[id] = this.channels[id].vol;
+      }
+      save("wb_pomo_noise", {active:active, vols:vols, master:this.masterVol});
+    },
+    power:function(on){
+      var self = this;
+      if(on){
+        if(!this.ensure()) return;
+        this.powered = true;
+        this.ctx.resume && this.ctx.resume();
+        this.master.gain.setTargetAtTime(this.masterVol, this.ctx.currentTime, 0.05);
+      }else{
+        this.powered = false;
+        if(this.ctx) this.master.gain.setTargetAtTime(0, this.ctx.currentTime, 0.05);
+      }
+    },
+    toggle:function(id){
+      if(!this.ensure()) return false;
+      var ch = this.channels[id];
+      if(!ch) return false;
+      ch.on = !ch.on;
+      if(!this.powered){ this.powered = true; this.ctx.resume && this.ctx.resume(); this.master.gain.value = this.masterVol; }
+      ch.node.gain.gain.setTargetAtTime(ch.on?ch.vol:0, this.ctx.currentTime, 0.08);
+      if(ch.on && ch.def.events) this.startEvents(ch);
+      if(!ch.on && ch.evTimer){ clearTimeout(ch.evTimer); ch.evTimer=null; }
+      this.savePrefs();
+      return true;
+    },
+    setVol:function(id, v){
+      var ch = this.channels[id];
+      if(!ch) return;
+      ch.vol = v;
+      if(ch.on) ch.node.gain.gain.setTargetAtTime(v, this.ctx.currentTime, 0.05);
+      this.savePrefs();
+    },
+    setMaster:function(v){
+      this.masterVol = v;
+      if(this.powered && this.master)
+        this.master.gain.setTargetAtTime(v, this.ctx.currentTime, 0.05);
+      this.savePrefs();
+    },
+    /* 随机事件：雨滴 / 火星爆裂 */
+    startEvents:function(ch){
+      var self = this;
+      function ev(){
+        if(!ch.on || !self.ctx){ ch.evTimer=null; return; }
+        var t = self.ctx.currentTime;
+        if(ch.def.events==="rain") self.droplet(t);
+        else if(ch.def.events==="fire") self.crackle(t);
+        ch.evTimer = setTimeout(ev, ch.def.events==="fire" ? 90+Math.random()*550 : 700+Math.random()*2600);
+      }
+      ch.evTimer = setTimeout(ev, 300);
+    },
+    droplet:function(t){ /* 一滴雨打在叶上的哒声 */
+      var c=this.ctx, o=c.createOscillator(), g=c.createGain();
+      o.type="sine";
+      o.frequency.setValueAtTime(900+Math.random()*700, t);
+      o.frequency.exponentialRampToValueAtTime(400+Math.random()*200, t+0.09);
+      g.gain.setValueAtTime(0.0001,t);
+      g.gain.exponentialRampToValueAtTime(0.10,t+0.008);
+      g.gain.exponentialRampToValueAtTime(0.0001,t+0.11);
+      o.connect(g); g.connect(this.master);
+      o.start(t); o.stop(t+0.13);
+    },
+    crackle:function(t){ /* 篝火噼啪 */
+      var c=this.ctx, s=c.createBufferSource();
+      s.buffer = buf(c,"white");
+      s.playbackRate.value = 0.8+Math.random()*0.8;
+      var f=c.createBiquadFilter(); f.type="highpass"; f.frequency.value=1800+Math.random()*2500;
+      var g=c.createGain();
+      var dur = 0.02+Math.random()*0.06, amp = 0.04+Math.random()*0.22;
+      g.gain.setValueAtTime(amp,t);
+      g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+      s.connect(f); f.connect(g); g.connect(this.master);
+      var off = Math.random()*2;
+      s.start(t, off, dur+0.02); s.stop(t+dur+0.03);
+    }
+  };
+
+  /* 噪音缓冲与链路构建 */
+  var bufCache = {};
+  function buf(ctx, type){
+    if(bufCache[type]) return bufCache[type];
+    var len = ctx.sampleRate*4;
+    var b = ctx.createBuffer(1, len, ctx.sampleRate);
+    var d = b.getChannelData(0);
+    if(type==="white"){
+      for(var i=0;i<len;i++) d[i]=Math.random()*2-1;
+    }else if(type==="pink"){
+      /* Paul Kellet 粉噪近似 */
+      var b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0;
+      for(var j=0;j<len;j++){
+        var w=Math.random()*2-1;
+        b0=0.99886*b0+w*0.0555179; b1=0.99332*b1+w*0.0750759;
+        b2=0.96900*b2+w*0.1538520; b3=0.86650*b3+w*0.3104856;
+        b4=0.55000*b4+w*0.5329522; b5=-0.7616*b5-w*0.0168980;
+        d[j]=(b0+b1+b2+b3+b4+b5+b6+w*0.5362)*0.11;
+        b6=w*0.115926;
+      }
+    }else{ /* brown */
+      var last=0;
+      for(var k=0;k<len;k++){
+        var w2=Math.random()*2-1;
+        last=(last+0.02*w2)/1.02;
+        d[k]=last*3.5;
+      }
+    }
+    bufCache[type]=b;
+    return b;
+  }
+  function filt(type, freq, q){
+    return {type:type, freq:freq, q:q||1};
+  }
+  function chain(ctx, buffer, filters, opt){
+    var src=ctx.createBufferSource();
+    src.buffer=buffer; src.loop=true;
+    var node=src, lastF=null;
+    filters.forEach(function(f){
+      var bi=ctx.createBiquadFilter();
+      bi.type=f.type; bi.frequency.value=f.freq; bi.Q.value=f.q||1;
+      node.connect(bi); node=bi; lastF=bi;
+    });
+    var g=ctx.createGain(); g.gain.value=0;
+    node.connect(g);
+    var lfoNodes=[];
+    if(opt && opt.lfo){
+      var lo=ctx.createOscillator(), lg=ctx.createGain();
+      lo.frequency.value=opt.lfo.freq;
+      if(opt.lfo.target==="filter" && lastF){
+        /* 滤波器频率来回摆（风声） */
+        lg.gain.value=opt.lfo.depth;
+        lo.connect(lg); lg.connect(lastF.frequency);
+      }else if(opt.lfo.target==="gain"){
+        /* 音量缓慢起伏（海浪）：swell 增益 = 基准 ± 摆幅，始终 > 0 */
+        var swell=ctx.createGain();
+        var base=1-opt.lfo.depth*0.5;          /* 最低不低于 1-depth */
+        swell.gain.value=base;
+        lg.gain.value=opt.lfo.depth*0.5;
+        node.connect(swell); swell.connect(g);
+        lo.connect(lg); lg.connect(swell.gain);
+      }
+      lo.start();
+      lfoNodes=[lo, lg];
+    }
+    src.start();
+    return {src:src, filter:lastF, gain:g, lfoNodes:lfoNodes};
+  }
+
+  /* ── 白噪音 UI ── */
+  function renderNoiseUI(){
+    var grid = $("#ch-grid");
+    grid.innerHTML = "";
+    Noise.defs.forEach(function(def){
+      var prefs = {on:false, vol:0.6};
+      if(Noise.channels[def.id]) prefs = {on:Noise.channels[def.id].on, vol:Noise.channels[def.id].vol};
+      else{
+        var p = load("wb_pomo_noise", {active:[], vols:{}});
+        prefs = {on:p.active.indexOf(def.id)>=0, vol:p.vols[def.id]!=null?p.vols[def.id]:0.6};
+      }
+      var el = document.createElement("div");
+      el.className = "ch"+(prefs.on?" on":"");
+      el.innerHTML =
+        '<div class="ch-hd"><div class="nm"><span class="ico">'+def.ico+'</span>'+def.name+'</div><div class="dot"></div></div>'+
+        '<input type="range" min="5" max="100" value="'+Math.round(prefs.vol*100)+'">';
+      el.addEventListener("click", function(e){
+        if(e.target.tagName==="INPUT") return;
+        var okToggle = Noise.toggle(def.id);
+        if(okToggle === false){ toast("当前环境不支持音频"); return; }
+        el.classList.toggle("on");
+        syncPowerBtn();
+      });
+      var rng = el.querySelector("input");
+      rng.addEventListener("input", function(e){
+        e.stopPropagation();
+        Noise.setVol(def.id, rng.value/100);
+      });
+      rng.addEventListener("click", function(e){ e.stopPropagation(); });
+      grid.appendChild(el);
+    });
+    var saved = load("wb_pomo_noise", {master:0.7});
+    $("#noise-master").value = Math.round((saved.master!=null?saved.master:0.7)*100);
+    syncPowerBtn();
+  }
+  function syncPowerBtn(){
+    var b = $("#noise-power");
+    b.textContent = Noise.powered ? "⏸ 停止" : "▶ 播放";
+    b.classList.toggle("off", !Noise.powered);
+  }
+  $("#noise-power").addEventListener("click", function(){
+    if(Noise.powered){
+      Noise.power(false);
+    }else{
+      if(!Noise.ensure()){ toast("当前环境不支持音频"); return; }
+      var has = false;
+      for(var id in Noise.channels) if(Noise.channels[id].on) has=true;
+      if(!has){ toast("先点一张声音卡片开启白噪音"); return; }
+      Noise.power(true);
+    }
+    syncPowerBtn();
+  });
+  $("#noise-master").addEventListener("input", function(){
+    Noise.setMaster(this.value/100);
+  });
+  $("#noise-hd").addEventListener("click", function(){
+    $("#noise-sec").classList.toggle("open");
+  });
+
+  /* ═════════ 今日统计 ═════════ */
+  function getStats(){
+    var s = load("wb_pomo_stats", {date:todayKey(), count:0, mins:0});
+    if(s.date !== todayKey()){ s = {date:todayKey(), count:0, mins:0}; }
+    return s;
+  }
+  function addFocus(mins){
+    var s = getStats();
+    s.count++; s.mins += mins;
+    save("wb_pomo_stats", s);
+    renderStats();
+  }
+  function getStreak(){
+    var hist = load("wb_pomo_hist", {});
+    var n = 0; var d = new Date();
+    function key(x){ return x.getFullYear()+"-"+(x.getMonth()+1)+"-"+x.getDate(); }
+    if(!hist[key(d)]) d.setDate(d.getDate()-1);
+    while(hist[key(d)]){ n++; d.setDate(d.getDate()-1); }
+    return n;
+  }
+  function markToday(){
+    var hist = load("wb_pomo_hist", {});
+    hist[todayKey()] = true;
+    save("wb_pomo_hist", hist);
+  }
+  function renderStats(){
+    var s = getStats();
+    $("#st-focus").textContent = s.count;
+    $("#st-mins").textContent = s.mins;
+    $("#st-streak").textContent = getStreak();
+  }
+
+  /* ═════════ 任务清单 ═════════ */
+  var tasks = load("wb_pomo_tasks", []);
+  var activeTaskId = load("wb_pomo_active", null);
+
+  function renderTasks(){
+    var ul = $("#task-list");
+    ul.innerHTML = "";
+    if(!tasks.length){
+      ul.innerHTML = '<div class="empty-tip">还没有任务，加一个开始专注吧 🍅</div>';
+      renderCurrentTask();
+      return;
+    }
+    tasks.forEach(function(t){
+      var li = document.createElement("li");
+      li.className = "task" + (t.done ? " done" : "") + (t.id===activeTaskId ? " active" : "");
+      li.innerHTML =
+        '<div class="chk">'+(t.done?"✓":"")+'</div>'+
+        '<div class="txt"></div>'+
+        (t.pomos>0 ? '<span class="pomo-count">🍅 '+t.pomos+'</span>' : "")+
+        '<button class="del" title="删除">×</button>';
+      li.querySelector(".txt").textContent = t.name;
+      li.querySelector(".chk").onclick = function(e){ e.stopPropagation(); t.done = !t.done; if(t.done && t.id===activeTaskId) activeTaskId=null; saveTasks(); };
+      li.querySelector(".txt").onclick = function(){
+        if(t.done) return;
+        activeTaskId = (activeTaskId===t.id ? null : t.id);
+        save("wb_pomo_active", activeTaskId);
+        renderTasks();
+      };
+      li.querySelector(".del").onclick = function(){
+        tasks = tasks.filter(function(x){ return x.id!==t.id; });
+        if(activeTaskId===t.id){ activeTaskId=null; save("wb_pomo_active", null); }
+        saveTasks();
+      };
+      ul.appendChild(li);
+    });
+    renderCurrentTask();
+  }
+  function saveTasks(){ save("wb_pomo_tasks", tasks); renderTasks(); }
+  function renderCurrentTask(){
+    var box = $("#current-task");
+    var t = tasks.find(function(x){ return x.id===activeTaskId && !x.done; });
+    if(t){
+      box.innerHTML = '<span class="tag">🎯 正在专注</span>';
+      box.appendChild(document.createTextNode(t.name));
+      box.classList.add("show");
+    }else{
+      box.classList.remove("show");
+    }
+  }
+  function addTask(){
+    var inp = $("#task-input");
+    var name = inp.value.trim();
+    if(!name) return;
+    tasks.push({id:Date.now(), name:name, done:false, pomos:0});
+    inp.value = "";
+    saveTasks();
+  }
+  $("#task-add").onclick = addTask;
+  $("#task-input").addEventListener("keydown", function(e){ if(e.key==="Enter") addTask(); });
+
+  /* ═════════ 计时核心（带状态持久化） ═════════ */
+  function saveState(){
+    save("wb_pomo_state", {
+      mode:state.mode, remaining:state.remaining, total:state.total,
+      running:state.running, endTime:state.endTime, doneFocus:state.doneFocus
+    });
+  }
+  function setMode(mode, keepRunning){
+    state.mode = mode;
+    state.total = cfg[mode]*60;
+    state.remaining = state.total;
+    document.querySelectorAll("#modes button").forEach(function(b){
+      b.classList.toggle("on", b.dataset.mode===mode);
+    });
+    $("#ring").style.stroke = MODES[mode].color;
+    $("#phase-label").textContent = MODES[mode].label;
+    if(!keepRunning) stop();
+    render();
+    saveState();
+  }
+  function render(){
+    var m = Math.floor(state.remaining/60), s = state.remaining%60;
+    $("#time").textContent = (m<10?"0":"")+m+":"+(s<10?"0":"")+s;
+    var pct = state.total ? (state.total-state.remaining)/state.total : 0;
+    $("#ring").style.strokeDashoffset = (RING_LEN*pct).toFixed(1);
+    var dots = document.querySelectorAll("#cycle-dots i");
+    var showDots = cfg.rounds<=4 ? 4 : cfg.rounds;
+    if(dots.length !== showDots){
+      $("#cycle-dots").innerHTML = new Array(showDots+1).join("<i></i>");
+      dots = document.querySelectorAll("#cycle-dots i");
+    }
+    dots.forEach(function(d,i){ d.classList.toggle("done", i < state.doneFocus); });
+    document.title = (state.running ? "▶ " : "") + $("#time").textContent + " · 番茄钟";
+    $("#btn-start").textContent = state.running ? "暂停" : (state.remaining<state.total ? "继续" : "开始");
+  }
+  function tick(){
+    state.remaining = Math.max(0, Math.round((state.endTime - Date.now())/1000));
+    if(state.remaining <= 0){
+      finish(false);
+      return;
+    }
+    render();
+    saveState();
+  }
+  function start(){
+    if(state.running) return;
+    state.running = true;
+    state.endTime = Date.now() + state.remaining*1000;
+    state.timer = setInterval(tick, 250);
+    render();
+    saveState();
+  }
+  function stop(){
+    state.running = false;
+    if(state.timer){ clearInterval(state.timer); state.timer = null; }
+    render();
+    saveState();
+  }
+  /* away=true: 页面曾被关闭，回来时发现已到点 → 静默结算 */
+  function finish(away){
+    stop();
+    if(!away){
+      playBell();
+      notify();
+    }
+    var finishedMode = state.mode;
+    if(finishedMode === "focus"){
+      addFocus(cfg.focus);
+      markToday();
+      state.doneFocus++;
+      var t = tasks.find(function(x){ return x.id===activeTaskId; });
+      if(t){ t.pomos++; saveTasks(); }
+      var next = (state.doneFocus >= cfg.rounds) ? "long" : "short";
+      if(state.doneFocus >= cfg.rounds) state.doneFocus = 0;
+      if(!away) toast(next==="long" ? "🎉 完成一轮！长休息一下" : "🍅 专注完成！休息一下");
+      setMode(next);
+      if(cfg.autoNext && !away) start();
+    }else{
+      if(!away) toast("☀ 休息结束，继续专注！");
+      setMode("focus");
+      if(cfg.autoNext && !away) start();
+    }
+    $("#time").classList.add("finished");
+    setTimeout(function(){ $("#time").classList.remove("finished"); }, 600);
+  }
+  $("#btn-start").onclick = function(){ state.running ? stop() : start(); };
+  $("#btn-reset").onclick = function(){ stop(); state.remaining = state.total; render(); saveState(); };
+  $("#btn-skip").onclick = function(){
+    if(state.mode === "focus"){
+      var next = (state.doneFocus+1 >= cfg.rounds) ? "long" : "short";
+      if(state.doneFocus+1 >= cfg.rounds) state.doneFocus = 0; else state.doneFocus++;
+      setMode(next);
+    }else{
+      setMode("focus");
+    }
+    if(cfg.autoNext && state.running) start();
+  };
+  document.addEventListener("keydown", function(e){
+    if(e.code==="Space" && e.target.tagName!=="INPUT" && !e.target.closest(".noise-body")){
+      e.preventDefault();
+      state.running ? stop() : start();
+    }
+  });
+  document.querySelectorAll("#modes button").forEach(function(b){
+    b.onclick = function(){ setMode(b.dataset.mode); };
+  });
+
+  /* ── 恢复上次状态（App 被杀后重开） ── */
+  function restoreState(){
+    var sv = null;
+    try{ sv = JSON.parse(localStorage.getItem("wb_pomo_state")); }catch(e){}
+    if(!sv || !sv.mode || !MODES[sv.mode]) return false;
+    state.mode = sv.mode;
+    state.doneFocus = sv.doneFocus||0;
+    state.total = sv.total || cfg[sv.mode]*60;
+    if(sv.running && sv.endTime && sv.endTime > Date.now()){
+      /* 还在计时中 → 静默续跑 */
+      state.endTime = sv.endTime;
+      state.remaining = Math.round((sv.endTime-Date.now())/1000);
+      state.running = true;
+      setModeUI();
+      state.timer = setInterval(tick, 250);
+      render();
+    }else if(sv.running){
+      /* 期间已到点 → 静默结算 */
+      state.remaining = 0;
+      finish(true);
+    }else{
+      state.remaining = (sv.remaining!=null && sv.remaining<=state.total) ? sv.remaining : state.total;
+      setModeUI();
+      render();
+    }
+    return true;
+  }
+  /* 只刷新模式相关 UI，不动 remaining/total/timer */
+  function setModeUI(){
+    document.querySelectorAll("#modes button").forEach(function(b){
+      b.classList.toggle("on", b.dataset.mode===state.mode);
+    });
+    $("#ring").style.stroke = MODES[state.mode].color;
+    $("#phase-label").textContent = MODES[state.mode].label;
+    saveState();
+  }
+
+  /* ═════════ 声音 & 通知 ═════════ */
+  function getCtx(){
+    if(Noise.ctx) return Noise.ctx;
+    var AC = window.AudioContext || window.webkitAudioContext;
+    return AC ? new AC() : null;
+  }
+  function playBell(){
+    if(!cfg.sound) return;
+    try{
+      var ctx = getCtx();
+      if(!ctx) return;
+      ctx.resume && ctx.resume();
+      [0, .45, .9].forEach(function(delay){
+        var o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = "sine"; o.frequency.value = 880;
+        g.gain.setValueAtTime(0.0001, ctx.currentTime+delay);
+        g.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime+delay+0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime+delay+0.4);
+        o.connect(g); g.connect(ctx.destination);
+        o.start(ctx.currentTime+delay); o.stop(ctx.currentTime+delay+0.45);
+      });
+    }catch(e){}
+  }
+  function notify(){
+    try{
+      if(!("Notification" in window)) return;
+      if(Notification.permission === "granted"){
+        var msg = state.mode==="focus" ? "休息一下！" : "继续专注！";
+        new Notification("🍅 番茄钟", {body: msg});
+      }
+    }catch(e){}
+  }
+  var toastTimer = null;
+  function toast(msg){
+    var t = $("#toast");
+    t.textContent = msg;
+    t.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ t.classList.remove("show"); }, 3000);
+  }
+
+  /* ═════════ 沉浸模式 ═════════ */
+  function toggleImmersive(on){
+    document.body.classList.toggle("immersive", on);
+    $("#btn-imm").classList.toggle("imm-on", on);
+    try{
+      if(on && document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(function(){});
+      else if(!on && document.exitFullscreen && document.fullscreenElement) document.exitFullscreen().catch(function(){});
+    }catch(e){}
+  }
+  $("#btn-imm").onclick = function(){ toggleImmersive(!document.body.classList.contains("immersive")); };
+  $("#imm-exit").onclick = function(){ toggleImmersive(false); };
+
+  /* ═════════ 设置弹层 ═════════ */
+  var tmpCfg = null;
+  function openDialog(){
+    tmpCfg = Object.assign({}, cfg);
+    $("#v-focus").textContent = tmpCfg.focus;
+    $("#v-short").textContent = tmpCfg.short;
+    $("#v-long").textContent = tmpCfg.long;
+    $("#v-rounds").textContent = tmpCfg.rounds;
+    $("#sw-auto").classList.toggle("on", tmpCfg.autoNext);
+    $("#sw-sound").classList.toggle("on", tmpCfg.sound);
+    $("#mask").classList.add("show");
+  }
+  $("#btn-settings").onclick = openDialog;
+  $("#dlg-close").onclick = function(){ $("#mask").classList.remove("show"); };
+  $("#mask").onclick = function(e){ if(e.target===this) $("#mask").classList.remove("show"); };
+  document.querySelectorAll(".num button").forEach(function(b){
+    b.onclick = function(){
+      var t = b.dataset.t, d = parseInt(b.dataset.d,10);
+      var limits = {focus:[5,90,5], short:[1,30,1], long:[5,60,5], rounds:[2,8,1]};
+      var L = limits[t];
+      tmpCfg[t] = Math.min(L[1], Math.max(L[0], tmpCfg[t]+d));
+      $("#v-"+t).textContent = tmpCfg[t];
+    };
+  });
+  $("#sw-auto").onclick = function(){ tmpCfg.autoNext = !tmpCfg.autoNext; this.classList.toggle("on", tmpCfg.autoNext); };
+  $("#sw-sound").onclick = function(){ tmpCfg.sound = !tmpCfg.sound; this.classList.toggle("on", tmpCfg.sound); };
+  $("#dlg-save").onclick = function(){
+    cfg = tmpCfg;
+    save("wb_pomo_cfg", cfg);
+    $("#mask").classList.remove("show");
+    if(!state.running) setMode(state.mode);
+    if(cfg.sound && "Notification" in window && Notification.permission==="default"){
+      Notification.requestPermission();
+    }
+    toast("✓ 设置已保存");
+  };
+
+  /* ═════════ 初始化 ═════════ */
+  if("Notification" in window && Notification.permission==="default"){
+    document.addEventListener("click", function once(){
+      Notification.requestPermission();
+      document.removeEventListener("click", once);
+    });
+  }
+  renderNoiseUI();
+  renderTasks();
+  renderStats();
+  restoreState();
+  if(!localStorage.getItem("wb_pomo_state")) setMode("focus");
+})();
+</script>
+</body>
+</html>
