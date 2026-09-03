@@ -446,22 +446,33 @@
   var Noise = {
     ctx:null, master:null, channels:{}, powered:false, masterVol:0.7,
     defs:[
-      {id:"rain",  ico:"🌧", name:"雨声",
+      {id:"rain",  ico:"🌧", name:"雨声", base:0.4,
+        /* 宽带雨幕：真实雨声频谱很宽，不能窄带 */
         build:function(c){ return chain(c, buf(c,"white"), [
-          filt("highpass",500), filt("lowpass",1500)
-        ]); }, events:"rain"},
-      {id:"wind",  ico:"🌲", name:"林间风",
+          filt("highpass",300), filt("lowpass",9000)
+        ]); },
+        sched:{
+          drizzle:{min:90, max:300,  fn:evDropSmall},
+          heavy:  {min:1600, max:5200, fn:evDropBig}
+        }},
+      {id:"wind",  ico:"🌲", name:"林间风", base:0.5,
         build:function(c){ return chain(c, buf(c,"pink"), [
-          filt("bandpass",650,0.8)
-        ], {lfo:{target:"filter", freq:0.06, depth:260}}); }},
-      {id:"fire",  ico:"🔥", name:"篝火",
+          filt("bandpass",480,0.6)
+        ], {lfo:{target:"filter", freq:0.05, depth:140}}); },
+        sched:{ gust:{min:3200, max:8000, fn:evGust} }},
+      {id:"fire",  ico:"🔥", name:"篝火", base:0.55,
         build:function(c){ return chain(c, buf(c,"brown"), [
-          filt("lowpass",700)
-        ]); }, events:"fire"},
-      {id:"waves", ico:"🌊", name:"海浪",
+          filt("lowpass",420)
+        ]); },
+        sched:{
+          crack:{min:240, max:1500, fn:evCrackBurst},
+          thump:{min:3800, max:10000, fn:evThump}
+        }},
+      {id:"waves", ico:"🌊", name:"海浪", base:0.3,
         build:function(c){ return chain(c, buf(c,"brown"), [
-          filt("lowpass",450)
-        ], {lfo:{target:"gain", freq:0.09, depth:0.35}}); }},
+          filt("lowpass",380)
+        ], {lfo:{target:"gain", freq:0.06, depth:0.18}}); },
+        sched:{ wave:{min:4800, max:10500, fn:evWave} }},
       {id:"pink",  ico:"📻", name:"粉噪音",
         build:function(c){ return chain(c, buf(c,"pink"), [ filt("lowpass",9000) ]); }},
       {id:"brown", ico:"🏔", name:"棕噪音",
@@ -482,11 +493,12 @@
       var self = this;
       this.defs.forEach(function(def){
         var node = def.build(self.ctx);          // {src, filter, gain, lfoNodes}
-        node.gain.gain.value = prefs.active.indexOf(def.id)>=0 ? (prefs.vols[def.id]||0.6) : 0;
+        var base = def.base||1;
+        node.gain.gain.value = prefs.active.indexOf(def.id)>=0 ? base*(prefs.vols[def.id]!=null?prefs.vols[def.id]:0.6) : 0;
         node.gain.connect(self.master);
-        var ch = {def:def, node:node, on:prefs.active.indexOf(def.id)>=0,
-                  vol:prefs.vols[def.id]!=null?prefs.vols[def.id]:0.6, evTimer:null};
-        if(ch.on && def.events) self.startEvents(ch);
+        var ch = {def:def, node:node, base:base, on:prefs.active.indexOf(def.id)>=0,
+                  vol:prefs.vols[def.id]!=null?prefs.vols[def.id]:0.6, evTimers:{}};
+        if(ch.on) self.startEvents(ch);
         self.channels[def.id] = ch;
       });
       return true;
@@ -522,9 +534,8 @@
       if(!ch) return false;
       ch.on = !ch.on;
       if(!this.powered){ this.powered = true; this.ctx.resume && this.ctx.resume(); this.master.gain.value = this.masterVol; }
-      ch.node.gain.gain.setTargetAtTime(ch.on?ch.vol:0, this.ctx.currentTime, 0.08);
-      if(ch.on && ch.def.events) this.startEvents(ch);
-      if(!ch.on && ch.evTimer){ clearTimeout(ch.evTimer); ch.evTimer=null; }
+      ch.node.gain.gain.setTargetAtTime(ch.on?(ch.base||1)*ch.vol:0, this.ctx.currentTime, 0.08);
+      if(ch.on) this.startEvents(ch); else this.stopEvents(ch);
       this.savePrefs();
       return true;
     },
@@ -532,7 +543,7 @@
       var ch = this.channels[id];
       if(!ch) return;
       ch.vol = v;
-      if(ch.on) ch.node.gain.gain.setTargetAtTime(v, this.ctx.currentTime, 0.05);
+      if(ch.on) ch.node.gain.gain.setTargetAtTime((ch.base||1)*v, this.ctx.currentTime, 0.05);
       this.savePrefs();
     },
     setMaster:function(v){
@@ -541,57 +552,151 @@
         this.master.gain.setTargetAtTime(v, this.ctx.currentTime, 0.05);
       this.savePrefs();
     },
-    /* 随机事件：雨滴 / 火星爆裂 */
+    /* 事件调度器：每通道可挂多个独立随机循环（雨滴/爆裂/浪涌/阵风） */
     startEvents:function(ch){
-      var self = this;
-      function ev(){
-        if(!ch.on || !self.ctx){ ch.evTimer=null; return; }
-        var t = self.ctx.currentTime;
-        if(ch.def.events==="rain") self.droplet(t);
-        else if(ch.def.events==="fire") self.crackle(t);
-        ch.evTimer = setTimeout(ev, ch.def.events==="fire" ? 90+Math.random()*550 : 700+Math.random()*2600);
-      }
-      ch.evTimer = setTimeout(ev, 300);
+      var self=this, sched=ch.def.sched;
+      if(!sched) return;
+      ch.evTimers = ch.evTimers || {};
+      Object.keys(sched).forEach(function(key){
+        if(ch.evTimers[key]) return;
+        var kick = function(){
+          if(!ch.on || !self.ctx){ delete ch.evTimers[key]; return; }
+          var sc = sched[key];
+          try{ sc.fn(self.ctx, self.ctx.currentTime+0.02, self.master, ch.vol); }catch(e){}
+          ch.evTimers[key] = setTimeout(kick, sc.min + Math.random()*(sc.max-sc.min));
+        };
+        ch.evTimers[key] = setTimeout(kick, 120 + Math.random()*380);
+      });
     },
-    droplet:function(t){ /* 一滴雨打在叶上的哒声 */
-      var c=this.ctx, o=c.createOscillator(), g=c.createGain();
-      o.type="sine";
-      o.frequency.setValueAtTime(900+Math.random()*700, t);
-      o.frequency.exponentialRampToValueAtTime(400+Math.random()*200, t+0.09);
-      g.gain.setValueAtTime(0.0001,t);
-      g.gain.exponentialRampToValueAtTime(0.10,t+0.008);
-      g.gain.exponentialRampToValueAtTime(0.0001,t+0.11);
-      o.connect(g); g.connect(this.master);
-      o.start(t); o.stop(t+0.13);
-    },
-    crackle:function(t){ /* 篝火噼啪 */
-      var c=this.ctx, s=c.createBufferSource();
-      s.buffer = buf(c,"white");
-      s.playbackRate.value = 0.8+Math.random()*0.8;
-      var f=c.createBiquadFilter(); f.type="highpass"; f.frequency.value=1800+Math.random()*2500;
-      var g=c.createGain();
-      var dur = 0.02+Math.random()*0.06, amp = 0.04+Math.random()*0.22;
-      g.gain.setValueAtTime(amp,t);
-      g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
-      s.connect(f); f.connect(g); g.connect(this.master);
-      var off = Math.random()*2;
-      s.start(t, off, dur+0.02); s.stop(t+dur+0.03);
+    stopEvents:function(ch){
+      if(!ch.evTimers) return;
+      for(var k in ch.evTimers){ clearTimeout(ch.evTimers[k]); delete ch.evTimers[k]; }
     }
   };
+
+  /* ═════════ 自然声事件（fn(ctx, t, master, vol)，全部实时合成） ═════════ */
+  function evDropSmall(c, t, out, vol){ /* 密集小雨滴：带通共鸣哒声 */
+    var s=c.createBufferSource(); s.buffer=buf(c,"white");
+    s.playbackRate.value=0.9+Math.random()*1.4;
+    var f=c.createBiquadFilter(); f.type="bandpass";
+    f.frequency.value=1400+Math.random()*2600; f.Q.value=7;
+    var g=c.createGain();
+    var amp=(0.03+Math.random()*0.05)*vol;
+    var dur=0.025+Math.random()*0.045;
+    g.gain.setValueAtTime(amp,t);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    s.connect(f); f.connect(g); g.connect(out);
+    s.start(t, Math.random()*3, dur+0.03); s.stop(t+dur+0.05);
+  }
+  function evDropBig(c, t, out, vol){ /* 稀疏重滴：正弦下滑"咚" */
+    var o=c.createOscillator(), g=c.createGain();
+    o.type="sine";
+    o.frequency.setValueAtTime(950+Math.random()*500, t);
+    o.frequency.exponentialRampToValueAtTime(300+Math.random()*150, t+0.10);
+    var amp=(0.05+Math.random()*0.05)*vol;
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(amp,t+0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+0.14);
+    o.connect(g); g.connect(out);
+    o.start(t); o.stop(t+0.16);
+  }
+  function evCrackBurst(c, t, out, vol){ /* 篝火爆裂：1-4 连发高频噼啪 */
+    var n=1+Math.floor(Math.random()*3);
+    for(var i=0;i<n;i++){
+      var t2=t + i*(0.014+Math.random()*0.05);
+      var s=c.createBufferSource(); s.buffer=buf(c,"white");
+      var f=c.createBiquadFilter(); f.type="highpass";
+      f.frequency.value=2200+Math.random()*4500;
+      var g=c.createGain();
+      var amp=(0.04+Math.random()*0.2)*vol;
+      var dur=0.012+Math.random()*0.05;
+      g.gain.setValueAtTime(amp,t2);
+      g.gain.exponentialRampToValueAtTime(0.0001,t2+dur);
+      s.connect(f); f.connect(g); g.connect(out);
+      s.start(t2, Math.random()*3, dur+0.02); s.stop(t2+dur+0.03);
+    }
+  }
+  function evThump(c, t, out, vol){ /* 木头爆裂闷响 */
+    var s=c.createBufferSource(); s.buffer=buf(c,"brown");
+    var f=c.createBiquadFilter(); f.type="lowpass"; f.frequency.value=260;
+    var g=c.createGain();
+    var amp=(0.18+Math.random()*0.18)*vol;
+    var dur=0.05+Math.random()*0.09;
+    g.gain.setValueAtTime(amp,t);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    s.connect(f); f.connect(g); g.connect(out);
+    s.start(t, Math.random()*3, dur+0.02); s.stop(t+dur+0.03);
+  }
+  function evWave(c, t, out, vol){ /* 一次完整浪涌：隆涌-破碎白沫-退去（双包络不对称） */
+    var big = Math.random()<0.35;
+    var dur = big ? 6.5+Math.random()*4 : 4+Math.random()*3;
+    var peak = (big?0.3+Math.random()*0.25:0.14+Math.random()*0.12)*vol;
+    var atk = dur*0.34;
+    /* 低频隆隆主体 */
+    var s1=c.createBufferSource(); s1.buffer=buf(c,"brown"); s1.loop=true;
+    var f1=c.createBiquadFilter(); f1.type="lowpass"; f1.frequency.value=520;
+    var g1=c.createGain();
+    g1.gain.setValueAtTime(0.0001,t);
+    g1.gain.linearRampToValueAtTime(peak, t+atk);
+    g1.gain.setValueAtTime(peak, t+atk+0.15);
+    g1.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    /* 破碎白沫：高频，稍晚起、先退 */
+    var s2=c.createBufferSource(); s2.buffer=buf(c,"white"); s2.loop=true;
+    var f2=c.createBiquadFilter(); f2.type="highpass"; f2.frequency.value=1300;
+    var f3=c.createBiquadFilter(); f3.type="lowpass"; f3.frequency.value=5200;
+    var g2=c.createGain();
+    var atk2=atk*1.25;
+    g2.gain.setValueAtTime(0.0001,t);
+    g2.gain.linearRampToValueAtTime(peak*0.75, t+atk2);
+    g2.gain.exponentialRampToValueAtTime(0.0001, t+atk2+(dur-atk2)*0.8);
+    s1.connect(f1); f1.connect(g1); g1.connect(out);
+    s2.connect(f2); f2.connect(f3); f3.connect(g2); g2.connect(out);
+    s1.start(t); s2.start(t);
+    s1.stop(t+dur+0.2); s2.stop(t+dur+0.2);
+  }
+  function evGust(c, t, out, vol){ /* 阵风：呼啸上扬 + 叶沙浮现（频率包络联动） */
+    var dur=3.5+Math.random()*4.5;
+    var atk=0.6+Math.random()*1.4;
+    var peak=(0.08+Math.random()*0.1)*vol;
+    /* 呼啸：粉噪窄带，中心频率随阵风上扬再回落 */
+    var s1=c.createBufferSource(); s1.buffer=buf(c,"pink"); s1.loop=true;
+    var f1=c.createBiquadFilter(); f1.type="bandpass"; f1.Q.value=1.8;
+    f1.frequency.setValueAtTime(220,t);
+    f1.frequency.linearRampToValueAtTime(480+Math.random()*220, t+atk);
+    f1.frequency.linearRampToValueAtTime(230, t+dur);
+    var g1=c.createGain();
+    g1.gain.setValueAtTime(0.0001,t);
+    g1.gain.linearRampToValueAtTime(peak, t+atk);
+    g1.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    /* 叶沙：高频白噪，阵风时才浮现 */
+    var s2=c.createBufferSource(); s2.buffer=buf(c,"white"); s2.loop=true;
+    var f2=c.createBiquadFilter(); f2.type="highpass"; f2.frequency.value=2600;
+    var g2=c.createGain();
+    g2.gain.setValueAtTime(0.0001,t);
+    g2.gain.linearRampToValueAtTime(peak*1.1, t+atk*1.15);
+    g2.gain.exponentialRampToValueAtTime(0.0001, t+dur*0.92);
+    s1.connect(f1); f1.connect(g1); g1.connect(out);
+    s2.connect(f2); f2.connect(g2); g2.connect(out);
+    s1.start(t); s2.start(t);
+    s1.stop(t+dur+0.2); s2.stop(t+dur+0.2);
+  }
 
   /* 噪音缓冲与链路构建 */
   var bufCache = {};
   function buf(ctx, type){
     if(bufCache[type]) return bufCache[type];
-    var len = ctx.sampleRate*4;
-    var b = ctx.createBuffer(1, len, ctx.sampleRate);
+    var sr = ctx.sampleRate;
+    var len = sr*4;
+    /* pink/brown 需要首尾交叉淡化做无缝循环（white 样本不相关，无需处理） */
+    var F = (type==="white") ? 0 : Math.floor(sr*0.2);
+    var b = ctx.createBuffer(1, len+F, sr);
     var d = b.getChannelData(0);
     if(type==="white"){
       for(var i=0;i<len;i++) d[i]=Math.random()*2-1;
     }else if(type==="pink"){
       /* Paul Kellet 粉噪近似 */
       var b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0;
-      for(var j=0;j<len;j++){
+      for(var j=0;j<len+F;j++){
         var w=Math.random()*2-1;
         b0=0.99886*b0+w*0.0555179; b1=0.99332*b1+w*0.0750759;
         b2=0.96900*b2+w*0.1538520; b3=0.86650*b3+w*0.3104856;
@@ -601,11 +706,22 @@
       }
     }else{ /* brown */
       var last=0;
-      for(var k=0;k<len;k++){
+      for(var k=0;k<len+F;k++){
         var w2=Math.random()*2-1;
         last=(last+0.02*w2)/1.02;
         d[k]=last*3.5;
       }
+    }
+    if(F>0){
+      /* 循环点 d[len-1]→d[0] 用尾部 F 样本与开头交叉淡化，保证连续 */
+      var tail = d.slice(len);
+      for(var m=0;m<F;m++){
+        var w3=m/F;
+        d[m]=d[m]*w3 + tail[m]*(1-w3);
+      }
+      var b2=ctx.createBuffer(1, len, sr);
+      b2.getChannelData(0).set(d.subarray(0,len));
+      b=b2;
     }
     bufCache[type]=b;
     return b;
